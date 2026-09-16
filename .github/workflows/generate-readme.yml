@@ -5,20 +5,15 @@ permissions:
 
 on:
   schedule:
-    - cron: '8-59/10 * * * *'
+    - cron: '0 * * * *'
   push:
     branches:
       - main
     paths:
       - '.github/workflows/generate-readme.yml'
       - 'index.html'
-      - 'README.md'
+      - 'style.css'
   workflow_dispatch:
-    inputs:
-      force_regenerate:
-        description: 'Paksa generate ulang README'
-        required: false
-        default: 'true'
 
 concurrency:
   group: generate-readme
@@ -92,8 +87,13 @@ jobs:
           if grep -qiE '^py$' /tmp/exts.txt; then TECH="${TECH}Python, "; fi
           if grep -qiE '^(jsx|tsx)$' /tmp/exts.txt; then TECH="${TECH}React, "; fi
           TECH="${TECH%, }"
-          [ -z "$TECH" ] && TECH="HTML, CSS, JavaScript"
+          [ -z "$TECH" ] && TECH="Tidak terdeteksi"
           echo "tech_stack=$TECH" >> $GITHUB_OUTPUT
+
+          # Struktur direktori nyata (depth 2), tanpa folder build/vendor
+          find . -maxdepth 2 \
+            \( -name .git -o -name node_modules -o -name dist -o -name build -o -name vendor \) -prune -o \
+            -print | sed 's|^\./||' | grep -v '^\.$' | LC_ALL=C sort > /tmp/tree_lines.txt
 
           # Daftar sub-proyek (folder dengan index.html di dalamnya, bukan root)
           # Beserta deskripsi singkat (dari heading README atau <title> index.html)
@@ -122,6 +122,7 @@ jobs:
 
       - name: Generate README content
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OWNER: ${{ steps.analyze.outputs.owner }}
           REPO: ${{ steps.analyze.outputs.repo }}
           PAGES_URL: ${{ steps.analyze.outputs.pages_url }}
@@ -133,10 +134,18 @@ jobs:
         run: |
           export TZ="Asia/Jakarta"
           TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S %Z")
+          TIMESTAMP_ENC=$(printf '%s' "$TIMESTAMP" | jq -sRr @uri)
+
+          # Situs hanya diklaim live jika GitHub Pages benar-benar aktif
+          PAGES_STATUS=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            "https://api.github.com/repos/${OWNER}/${REPO}/pages")
+          PAGES_ENABLED="false"
+          [ "$PAGES_STATUS" = "200" ] && PAGES_ENABLED="true"
 
           {
-            echo "<!-- README ini dihasilkan otomatis oleh workflow .github/workflows/generate-readme.yml -->"
-            echo "<!-- Jangan edit manual; perubahan akan ditim pada run berikutnya. -->"
+            echo '<!-- README ini dihasilkan otomatis oleh .github/workflows/generate-readme.yml -->'
+            echo '<!-- Jangan edit manual: perubahan akan ditimpa pada run berikutnya. -->'
             echo ""
             echo "<h1 align=\"center\">${SITE_TITLE} 👋</h1>"
             echo ""
@@ -146,80 +155,81 @@ jobs:
             echo ""
             echo "<p align=\"center\">"
             echo "  <a href=\"https://github.com/${OWNER}/${REPO}\"><img alt=\"GitHub repo\" src=\"https://img.shields.io/badge/GitHub-${OWNER}/${REPO}-blue?logo=github\"></a>"
-            echo "  <a href=\"${PAGES_URL}\"><img alt=\"Live Demo\" src=\"https://img.shields.io/badge/Live%20Demo-Online-success?logo=githubpages\"></a>"
+            if [ "$PAGES_ENABLED" = "true" ]; then
+              echo "  <a href=\"${PAGES_URL}\"><img alt=\"Live Demo\" src=\"https://img.shields.io/badge/Live%20Demo-Online-success?logo=githubpages\"></a>"
+            fi
             echo "  <img alt=\"Files\" src=\"https://img.shields.io/badge/Files-${FILE_COUNT}-informational\">"
-            echo "  <img alt=\"Updated\" src=\"https://img.shields.io/badge/Updated-${TIMESTAMP}-lightgrey\">"
+            echo "  <img alt=\"Updated\" src=\"https://img.shields.io/static/v1?label=Updated&message=${TIMESTAMP_ENC}&color=lightgrey\">"
             echo "</p>"
             echo ""
             echo "---"
             echo ""
             echo "## 📖 Tentang"
             echo ""
-            echo "Repository **\`${REPO}\`** adalah situs web pribadi / portofolio yang diterbitkan melalui **GitHub Pages**. Situs utama berada di [\`${PAGES_URL}\`](${PAGES_URL})."
+            echo "Repository **\`${REPO}\`** berisi halaman web statis (HTML + CSS) tanpa build step dan tanpa dependency."
+            if [ "$PAGES_ENABLED" = "true" ]; then
+              echo "Situs ini diterbitkan melalui **GitHub Pages** dan dapat diakses di [\`${PAGES_URL}\`](${PAGES_URL})."
+            else
+              echo "GitHub Pages belum diaktifkan untuk repository ini, jadi halaman baru bisa dibuka secara lokal."
+            fi
             echo ""
             echo "## 🗂️ Struktur Proyek"
             echo ""
             echo '```'
             echo "${REPO}/"
-            echo "├── index.html          # Halaman utama (landing / portofolio)"
-            echo "├── assets/             # Aset statis (css, js, img, vendor)"
-            echo "├── forms/               # Form handler (PHP)"
-
-            # Sub-proyek
-            if [ -s /tmp/subs_table.txt ]; then
-              while IFS='|' read -r sub desc; do
-                echo "└── ${sub}/              # ${desc}  ->  ${PAGES_URL}${sub}/"
-              done < /tmp/subs_table.txt
-            fi
+            while IFS= read -r entry; do
+              [ -z "$entry" ] && continue
+              name="${entry##*/}"
+              if [ -d "$entry" ]; then
+                name="${name}/"
+              fi
+              depth=$(awk -F/ '{print NF-1}' <<< "$entry")
+              indent=$(printf '%*s' $((depth * 2)) '')
+              echo "${indent}${name}"
+            done < /tmp/tree_lines.txt
             echo '```'
             echo ""
 
             if [ "${SUB_COUNT}" -gt 0 ]; then
               echo "## 🌐 Sub-Proyek / Demo"
               echo ""
-              echo "Situs ini juga memuat beberapa sub-proyek (masing-masing punya \`index.html\` tersendiri):"
+              echo "Repository ini juga memuat sub-proyek (masing-masing punya \`index.html\` tersendiri):"
               echo ""
-              echo "| Folder | Demo Live | Keterangan |"
-              echo "|--------|-----------|-----------|"
+              echo "| Folder | Keterangan |"
+              echo "|--------|-----------|"
               while IFS='|' read -r sub desc; do
-                echo "| [\`${sub}\`](./${sub}) | [${PAGES_URL}${sub}/](${PAGES_URL}${sub}/) | ${desc} |"
+                echo "| [\`${sub}\`](./${sub}) | ${desc} |"
               done < /tmp/subs_table.txt
               echo ""
             fi
 
             echo "## 🛠️ Teknologi"
             echo ""
-            echo "Berdasarkan isi repository, proyek ini menggunakan:"
+            echo "Berdasarkan ekstensi berkas yang terdeteksi di repository:"
             echo ""
-            TECH_LIST=$(echo "${TECH_STACK}" | sed 's/, /, /g')
-            IFS=', ' read -ra ARR <<< "$TECH_LIST"
+            IFS=', ' read -ra ARR <<< "${TECH_STACK}"
             for t in "${ARR[@]}"; do
               [ -n "$t" ] && echo "- \`$t\`"
             done
             echo ""
-            echo "> Total **${FILE_COUNT} file** terdeteksi di repository."
+            echo "> Total **${FILE_COUNT} berkas** di repository (di luar \`.git\`, \`node_modules\`, \`dist\`, dan \`build\`)."
             echo ""
             echo "## 🚀 Menjalankan Secara Lokal"
             echo ""
-            echo "Karena ini situs statis (HTML/CSS/JS/PHP), cukup buka \`index.html\` di browser, atau jalankan server lokal:"
+            echo "Tanpa dependency apa pun. Buka \`index.html\` langsung di browser, atau jalankan server statis:"
             echo ""
             echo '```bash'
-            echo "# Tanpa dependency"
             echo "python3 -m http.server 8000"
             echo "# lalu buka http://localhost:8000"
-            echo ""
-            echo "# atau dengan PHP (untuk form handler di forms/)"
-            echo "php -S localhost:8000"
             echo '```'
             echo ""
             echo "## 📬 Kontak"
             echo ""
             echo "- GitHub: [${OWNER}](https://github.com/${OWNER})"
-            echo "- Situs: [${PAGES_URL}](${PAGES_URL})"
             echo ""
             echo "## 📄 Lisensi"
             echo ""
-            echo "Lihat berkas [\`LICENSE\`](./LICENSE) untuk informasi lisensi."
+            echo "Proyek ini dilisensikan di bawah MIT License — lihat berkas [\`LICENSE\`](./LICENSE)."
             echo ""
             echo "---"
             echo ""
@@ -240,16 +250,25 @@ jobs:
         run: |
           export TZ="Asia/Jakarta"
 
-          # Stage dulu agar working tree bersih sebelum pull --rebase
           git add README.md
 
           if git diff --staged --quiet; then
             echo "Tidak ada perubahan pada README."
-          else
-            git commit -m "docs: auto-generate README at $(date +'%Y-%m-%d %H:%M:%S') WIB"
-            # Pull --rebase aman karena perubahan sudah di-commit (tree bersih)
-            git pull --rebase origin ${{ github.ref_name }}
-            git push origin ${{ github.ref_name }}
-            echo "README berhasil diperbarui!"
+            exit 0
           fi
+
+          git commit -m "docs: auto-generate README at $(date +'%Y-%m-%d %H:%M:%S') WIB"
+
+          # Rebase & push dengan retry, agar aman bila ada commit lain masuk bersamaan
+          for attempt in 1 2 3; do
+            if git pull --rebase origin ${{ github.ref_name }} && git push origin ${{ github.ref_name }}; then
+              echo "README berhasil diperbarui!"
+              exit 0
+            fi
+            echo "Push attempt ${attempt} gagal, mencoba lagi..."
+            sleep 5
+          done
+
+          echo "::error::Gagal push README setelah 3 percobaan."
+          exit 1
 
