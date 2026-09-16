@@ -57,7 +57,7 @@ jobs:
           fi
 
           # Ambil nama & role dari <title> dan <h1> index.html root
-          TITLE="Project"
+          TITLE=""
           ROLE=""
           if [ -f index.html ]; then
             TITLE=$(grep -oP '(?<=<title>).*?(?=</title>)' index.html | head -1 | sed 's/[[:space:]]*$//')
@@ -67,6 +67,15 @@ jobs:
             HERO_P=$(grep -oP '(?<=<p>).*?(?=</p>)' index.html | head -1 | sed 's/<[^>]*>//g' | sed 's/[[:space:]]*$//')
             [ -n "$HERO_P" ] && ROLE="$HERO_P"
           fi
+          # Fallback: nama repo, lalu nama paket composer bila ada
+          if [ -z "$TITLE" ]; then
+            TITLE="$REPO"
+            if [ -f composer.json ]; then
+              CNAME=$(python3 -c "import json;print(json.load(open('composer.json')).get('name','') or '')" 2>/dev/null || true)
+              if [ -n "$CNAME" ]; then TITLE="$CNAME"; fi
+            fi
+          fi
+          if [ -z "$ROLE" ]; then ROLE="$TITLE"; fi
           echo "site_title=$TITLE" >> $GITHUB_OUTPUT
           echo "site_role=$ROLE" >> $GITHUB_OUTPUT
 
@@ -89,6 +98,20 @@ jobs:
           TECH="${TECH%, }"
           [ -z "$TECH" ] && TECH="Tidak terdeteksi"
           echo "tech_stack=$TECH" >> $GITHUB_OUTPUT
+
+          # Jenis proyek, dipakai untuk menyusun kalimat deskripsi yang akurat
+          KIND="generic"
+          if [ -f composer.json ] || [ -f index.php ] || [ -d app/Controllers ]; then
+            KIND="php"
+          elif [ -f package.json ]; then
+            KIND="node"
+          elif [ -f requirements.txt ] || [ -f pyproject.toml ] || [ -f setup.py ]; then
+            KIND="python"
+          elif [ -f index.html ]; then
+            KIND="static"
+          fi
+          echo "project_kind=$KIND" >> $GITHUB_OUTPUT
+          if [ -f index.html ]; then echo "is_static=true" >> $GITHUB_OUTPUT; else echo "is_static=false" >> $GITHUB_OUTPUT; fi
 
           # Struktur direktori nyata (depth 2), tanpa folder build/vendor
           find . -maxdepth 2 \
@@ -131,6 +154,8 @@ jobs:
           TECH_STACK: ${{ steps.analyze.outputs.tech_stack }}
           FILE_COUNT: ${{ steps.analyze.outputs.file_count }}
           SUB_COUNT: ${{ steps.analyze.outputs.sub_count }}
+          PROJECT_KIND: ${{ steps.analyze.outputs.project_kind }}
+          IS_STATIC: ${{ steps.analyze.outputs.is_static }}
         run: |
           export TZ="Asia/Jakarta"
           TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S %Z")
@@ -142,6 +167,20 @@ jobs:
             "https://api.github.com/repos/${OWNER}/${REPO}/pages")
           PAGES_ENABLED="false"
           [ "$PAGES_STATUS" = "200" ] && PAGES_ENABLED="true"
+
+          case "$PROJECT_KIND" in
+            php)    KIND_DESC="proyek PHP" ;;
+            node)   KIND_DESC="proyek Node.js" ;;
+            python) KIND_DESC="proyek Python" ;;
+            static) KIND_DESC="situs statis" ;;
+            *)      KIND_DESC="proyek perangkat lunak" ;;
+          esac
+
+          if [ "$TECH_STACK" = "Tidak terdeteksi" ]; then
+            KIND_SENTENCE="Repository **\`${REPO}\`** adalah ${KIND_DESC}."
+          else
+            KIND_SENTENCE="Repository **\`${REPO}\`** adalah ${KIND_DESC} yang dibangun dengan ${TECH_STACK}."
+          fi
 
           {
             echo '<!-- README ini dihasilkan otomatis oleh .github/workflows/generate-readme.yml -->'
@@ -166,11 +205,14 @@ jobs:
             echo ""
             echo "## 📖 Tentang"
             echo ""
-            echo "Repository **\`${REPO}\`** berisi halaman web statis (HTML + CSS) tanpa build step dan tanpa dependency."
-            if [ "$PAGES_ENABLED" = "true" ]; then
+            echo "${KIND_SENTENCE}"
+
+            if [ "$IS_STATIC" = "true" ] && [ "$PAGES_ENABLED" = "true" ]; then
               echo "Situs ini diterbitkan melalui **GitHub Pages** dan dapat diakses di [\`${PAGES_URL}\`](${PAGES_URL})."
+            elif [ "$PAGES_ENABLED" = "true" ]; then
+              echo "Demo berjalan tersedia melalui **GitHub Pages** di [\`${PAGES_URL}\`](${PAGES_URL})."
             else
-              echo "GitHub Pages belum diaktifkan untuk repository ini, jadi halaman baru bisa dibuka secara lokal."
+              echo "GitHub Pages belum diaktifkan untuk repository ini."
             fi
             echo ""
             echo "## 🗂️ Struktur Proyek"
@@ -216,12 +258,45 @@ jobs:
             echo ""
             echo "## 🚀 Menjalankan Secara Lokal"
             echo ""
-            echo "Tanpa dependency apa pun. Buka \`index.html\` langsung di browser, atau jalankan server statis:"
-            echo ""
-            echo '```bash'
-            echo "python3 -m http.server 8000"
-            echo "# lalu buka http://localhost:8000"
-            echo '```'
+            case "$PROJECT_KIND" in
+              php)
+                echo "Butuh PHP dan Composer:"
+                echo ""
+                echo '```bash'
+                echo "composer install"
+                echo "php spark serve"
+                echo "# atau"
+                echo "php -S localhost:8000 -t public"
+                echo '```'
+                ;;
+              node)
+                echo "Butuh Node.js:"
+                echo ""
+                echo '```bash'
+                echo "npm install"
+                echo "npm run dev"
+                echo '```'
+                ;;
+              python)
+                echo "Butuh Python 3:"
+                echo ""
+                echo '```bash'
+                echo "python3 -m venv .venv && source .venv/bin/activate"
+                echo "pip install -r requirements.txt"
+                echo '```'
+                ;;
+              static)
+                echo "Tanpa dependency apa pun. Buka \`index.html\` langsung di browser, atau jalankan server statis:"
+                echo ""
+                echo '```bash'
+                echo "python3 -m http.server 8000"
+                echo "# lalu buka http://localhost:8000"
+                echo '```'
+                ;;
+              *)
+                echo "Lihat berkas konfigurasi di repository ini untuk cara menjalankannya."
+                ;;
+            esac
             echo ""
             echo "## 📬 Kontak"
             echo ""
