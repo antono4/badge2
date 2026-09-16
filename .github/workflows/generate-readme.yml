@@ -36,6 +36,8 @@ jobs:
 
       - name: Analyze repository structure
         id: analyze
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           export TZ="Asia/Jakarta"
 
@@ -56,26 +58,36 @@ jobs:
             echo "pages_url=https://${OWNER}.github.io/${REPO}/" >> $GITHUB_OUTPUT
           fi
 
-          # Ambil nama & role dari <title> dan <h1> index.html root
+          # Nama & tagline: deskripsi repo adalah sumber paling otoritatif,
+          # <title> HTML hanya dipakai bila halaman HTML memang isi utama repo.
+          REPO_DESC=""
+          if [ -n "${GH_TOKEN:-}" ]; then
+            REPO_DESC=$(curl -s -H "Authorization: Bearer ${GH_TOKEN}" \
+              "https://api.github.com/repos/${OWNER}/${REPO}" | jq -r '.description // ""')
+          fi
+          [ "$REPO_DESC" = "null" ] && REPO_DESC=""
+
           TITLE=""
-          ROLE=""
+          H1=""
           if [ -f index.html ]; then
             TITLE=$(grep -oP '(?<=<title>).*?(?=</title>)' index.html | head -1 | sed 's/[[:space:]]*$//')
-            ROLE=$(grep -oP '(?<=<h1>).*?(?=</h1>)' index.html | head -1 | sed 's/<[^>]*>//g' | sed 's/[[:space:]]*$//')
-            [ -z "$ROLE" ] && ROLE="$TITLE"
-            # Coba ambil deskripsi/role dari <p> di hero section
-            HERO_P=$(grep -oP '(?<=<p>).*?(?=</p>)' index.html | head -1 | sed 's/<[^>]*>//g' | sed 's/[[:space:]]*$//')
-            [ -n "$HERO_P" ] && ROLE="$HERO_P"
+            H1=$(grep -oP '(?<=<h1>).*?(?=</h1>)' index.html | head -1 | sed 's/<[^>]*>//g' | sed 's/[[:space:]]*$//')
           fi
-          # Fallback: nama repo, lalu nama paket composer bila ada
-          if [ -z "$TITLE" ]; then
-            TITLE="$REPO"
-            if [ -f composer.json ]; then
-              CNAME=$(python3 -c "import json;print(json.load(open('composer.json')).get('name','') or '')" 2>/dev/null || true)
-              if [ -n "$CNAME" ]; then TITLE="$CNAME"; fi
-            fi
-          fi
+
+          # Judul: <title> -> nama repo. Nama paket composer tidak dipakai
+          # karena pada skeleton isinya nama framework, bukan nama proyek.
+          if [ -z "$TITLE" ]; then TITLE="$REPO"; fi
+          # Buang suffix pemisah umum, mis. "VOLTRA. | Mobilitas Listrik Premium"
+          TITLE=$(printf '%s' "$TITLE" | sed -E 's/[[:space:]]*[|·—-][[:space:]]+.*$//' | sed 's/[[:space:]]*$//')
+          if [ -z "$TITLE" ]; then TITLE="$REPO"; fi
+
+          # Tagline: deskripsi repo -> <h1> -> judul
+          ROLE="$REPO_DESC"
+          if [ -z "$ROLE" ]; then ROLE="$H1"; fi
           if [ -z "$ROLE" ]; then ROLE="$TITLE"; fi
+          # Batasi panjang agar tidak merusak kartu header
+          ROLE=$(printf '%s' "$ROLE" | cut -c1-140)
+
           echo "site_title=$TITLE" >> $GITHUB_OUTPUT
           echo "site_role=$ROLE" >> $GITHUB_OUTPUT
 
@@ -189,7 +201,7 @@ jobs:
             echo "<h1 align=\"center\">${SITE_TITLE} 👋</h1>"
             echo ""
             echo "<p align=\"center\">"
-            echo "  <strong>${SITE_ROLE}</strong>"
+            echo "  <em>${SITE_ROLE}</em>"
             echo "</p>"
             echo ""
             echo "<p align=\"center\">"
