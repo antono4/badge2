@@ -4,13 +4,13 @@
 <h1 align="center">badge2 👋</h1>
 
 <p align="center">
-  <strong>Hello world</strong>
+  <strong>Hello world 👋 — halaman statis sederhana yang dibangun dengan HTML dan CSS.</strong>
 </p>
 
 <p align="center">
   <a href="https://github.com/antono4/badge2"><img alt="GitHub repo" src="https://img.shields.io/badge/GitHub-antono4/badge2-blue?logo=github"></a>
   <img alt="Files" src="https://img.shields.io/badge/Files-5-informational">
-  <img alt="Updated" src="https://img.shields.io/static/v1?label=Updated&message=2026-09-16%2009%3A49%3A27%20WIB&color=lightgrey">
+  <img alt="Updated" src="https://img.shields.io/static/v1?label=Updated&message=2026-09-16%2010%3A02%3A48%20WIB&color=lightgrey">
 </p>
 
 ---
@@ -60,4 +60,4 @@ Proyek ini dilisensikan di bawah MIT License — lihat berkas [`LICENSE`](./LICE
 
 ---
 
-<sub>README ini di-generate otomatis pada **2026-09-16 09:49:27 WIB** oleh GitHub Actions `.github/workflows/generate-readme.yml`.</sub>
+<sub>README ini di-generate otomatis pada **2026-09-16 10:02:48 WIB** oleh GitHub Actions `.github/workflows/generate-readme.yml`.</sub>
