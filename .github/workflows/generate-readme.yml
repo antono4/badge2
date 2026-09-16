@@ -4,15 +4,16 @@ permissions:
   contents: write
 
 on:
-  schedule:
-    - cron: '0 * * * *'
   push:
     branches:
       - main
+      - master
     paths:
       - '.github/workflows/generate-readme.yml'
       - 'index.html'
       - 'style.css'
+      - 'package.json'
+      - 'composer.json'
   workflow_dispatch:
 
 concurrency:
@@ -92,9 +93,13 @@ jobs:
           echo "site_role=$ROLE" >> $GITHUB_OUTPUT
 
           # Hitung jumlah file & bahasa utama
+          # README.md dikecualikan: berkas ini keluaran generator sendiri,
+          # kalau dihitung hasilnya berubah antara run pertama (README belum
+          # ada) dan run berikutnya (README sudah ada) -> memicu commit palsu.
           FILE_COUNT=$(find . -type f \
             -not -path '*/.git/*' -not -path '*/node_modules/*' \
-            -not -path '*/dist/*' -not -path '*/build/*' | wc -l)
+            -not -path '*/dist/*' -not -path '*/build/*' \
+            -not -path './README.md' | wc -l)
           echo "file_count=$FILE_COUNT" >> $GITHUB_OUTPUT
 
           # Ekstensi yang ada di repo (menentukan tech stack)
@@ -125,10 +130,12 @@ jobs:
           echo "project_kind=$KIND" >> $GITHUB_OUTPUT
           if [ -f index.html ]; then echo "is_static=true" >> $GITHUB_OUTPUT; else echo "is_static=false" >> $GITHUB_OUTPUT; fi
 
-          # Struktur direktori nyata (depth 2), tanpa folder build/vendor
+          # Struktur direktori nyata (depth 2), tanpa folder build/vendor.
+          # README.md juga dikecualikan (keluaran generator sendiri).
           find . -maxdepth 2 \
             \( -name .git -o -name node_modules -o -name dist -o -name build -o -name vendor \) -prune -o \
-            -print | sed 's|^\./||' | grep -v '^\.$' | LC_ALL=C sort > /tmp/tree_lines.txt
+            -print | sed 's|^\./||' | grep -v '^\.$' | grep -v '^README\.md$' \
+            | LC_ALL=C sort > /tmp/tree_lines.txt
 
           # Daftar sub-proyek (folder dengan index.html di dalamnya, bukan root)
           # Beserta deskripsi singkat (dari heading README atau <title> index.html)
@@ -170,10 +177,12 @@ jobs:
           IS_STATIC: ${{ steps.analyze.outputs.is_static }}
         run: |
           export TZ="Asia/Jakarta"
-          TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S %Z")
-          TIMESTAMP_ENC=$(printf '%s' "$TIMESTAMP" | jq -sRr @uri)
 
-          # Situs hanya diklaim live jika GitHub Pages benar-benar aktif
+          # Catatan: README ini sengaja TIDAK memuat timestamp yang di-commit.
+          # Badge "Updated" memakai badge dinamis dari shields.io yang membaca
+          # commit terakhir saat di-render, sehingga README hanya berubah bila
+          # isi repo memang berubah. Tanpa ini, setiap run akan menghasilkan
+          # commit baru (dulu 5 workflow x 10 menit di banyak repo).
           PAGES_STATUS=$(curl -s -o /dev/null -w '%{http_code}' \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             "https://api.github.com/repos/${OWNER}/${REPO}/pages")
@@ -210,7 +219,7 @@ jobs:
               echo "  <a href=\"${PAGES_URL}\"><img alt=\"Live Demo\" src=\"https://img.shields.io/badge/Live%20Demo-Online-success?logo=githubpages\"></a>"
             fi
             echo "  <img alt=\"Files\" src=\"https://img.shields.io/badge/Files-${FILE_COUNT}-informational\">"
-            echo "  <img alt=\"Updated\" src=\"https://img.shields.io/static/v1?label=Updated&message=${TIMESTAMP_ENC}&color=lightgrey\">"
+            echo "  <img alt=\"Last commit\" src=\"https://img.shields.io/github/last-commit/${OWNER}/${REPO}\">"
             echo "</p>"
             echo ""
             echo "---"
@@ -320,7 +329,7 @@ jobs:
             echo ""
             echo "---"
             echo ""
-            echo "<sub>README ini di-generate otomatis pada **${TIMESTAMP}** oleh GitHub Actions \`.github/workflows/generate-readme.yml\`.</sub>"
+            echo "<sub>README ini di-generate otomatis oleh GitHub Actions \`.github/workflows/generate-readme.yml\`.</sub>"
           } > README.md
 
           echo "=== Pratinjau README ==="
