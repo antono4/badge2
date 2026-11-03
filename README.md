@@ -1,1 +1,26 @@
-Last updated: 2026-11-03 23:09:28 WIB
+# badge2
+
+
+
+## 📋 Overview
+
+This repository contains **10 files** and is built with the following technologies:
+
+HTML, CSS
+
+## 🚀 Quick Start
+
+## ✨ Features
+
+- 📝 Auto-generated documentation
+
+## 🛠️ Technologies
+
+HTML, CSS
+
+## 📄 License
+
+MIT License
+
+---
+*Last updated: 2026-11-03 23:11:20 WIB*
